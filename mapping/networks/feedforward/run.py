@@ -2,6 +2,7 @@
 
 import argparse
 from datetime import datetime
+import sys
 
 import json
 
@@ -12,10 +13,11 @@ from pysthal.command_line_util import init_logger
 init_logger("WARN", [])
 
 
-class RandomNetwork(object):
-    def __init__(self, N, prob, marocco, model=pynn.EIF_cond_exp_isfa_ista):
-        self.N = N
-        self.prob = prob
+class FeedforwardNetwork(object):
+    def __init__(self, num_layers, conn_prob, neurons_per_layer, marocco, model=pynn.EIF_cond_exp_isfa_ista):
+        self.neurons_per_layer = neurons_per_layer
+        self.num_layers = num_layers
+        self.conn_prob = conn_prob
         self.model = model
         self.marocco = marocco
 
@@ -23,32 +25,39 @@ class RandomNetwork(object):
 
     def build(self):
 
-        self.neurons = pynn.Population(self.N, self.model)
+        self.neurons = []
+        for i in range(self.num_layers):
+            self.neurons.append(pynn.Population(self.neurons_per_layer, self.model))
 
-        connector = pynn.FixedProbabilityConnector(p_connect=self.prob,
-                                                   allow_self_connections=True,
-                                                   weights=0.003)
-
-        pynn.Projection(self.neurons,
-                        self.neurons,
-                        connector,
-                        target='excitatory',
-                        rng=pynn.NativeRNG(42))
+        connector = pynn.FixedProbabilityConnector(
+            p_connect=self.conn_prob,
+            allow_self_connections=False,
+            weights=0.003)
+        proj = []
+        for i in range(1, self.num_layers):
+            proj = pynn.Projection(
+                self.neurons[i-1],
+                self.neurons[i],
+                connector,
+                target='excitatory',
+                rng=pynn.NativeRNG(42))
 
     def run(self):
-        pynn.run(1)
+        pynn.run(1.)
         pynn.end()
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--prob', default=0.1, type=float)
-    parser.add_argument('--N', default=5000, type=int)
-    parser.add_argument('--name', default="random_network", type=str)
+    parser.add_argument('--num_layers', default=2, type=int)
+    parser.add_argument('--conn_prob', default=1., type=float)
+    parser.add_argument('--neurons_per_layer', default=200, type=int)
+    parser.add_argument('--name', default="feedforward_layered_network", type=str)
 
     args = parser.parse_args()
 
-    taskname = "N{}_p{}".format(args.N, args.prob)
+    taskname = "num_layers{}_neurons_per_layer{}_conn_prob{}".format(
+        args.num_layers, args.neurons_per_layer, args.conn_prob)
 
     marocco = pymarocco.PyMarocco()
     marocco.continue_despite_synapse_loss = True
@@ -58,7 +67,7 @@ def main():
     marocco.persist = "results_{}_{}.xml.gz".format(args.name, taskname)
 
     start = datetime.now()
-    r = RandomNetwork(args.N, args.prob, marocco)
+    r = FeedforwardNetwork(args.num_layers, args.conn_prob, args.neurons_per_layer, marocco)
     r.build()
     mid = datetime.now()
     try:
@@ -108,14 +117,16 @@ def main():
             {"type": "performance",
              "name": "synapse_loss_after_l1",
              "value": lostsynapsesl1
-             }
-        ]
+             },
+        ],
     }
 
     with open("{}_{}_results.json".format(result["model"], result["task"]),
               'w') as outfile:
         json.dump(result, outfile)
 
+    print("{}\n{}\nSynapses lost: {}; L1 synapses lost: {}; relative synapse lost: {}".format(
+        sys.argv, taskname, lostsynapses, lostsynapsesl1, float(lostsynapses) / totsynapses))
 
 if __name__ == '__main__':
     main()

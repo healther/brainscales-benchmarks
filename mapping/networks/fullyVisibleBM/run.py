@@ -2,7 +2,6 @@
 
 import argparse
 from datetime import datetime
-
 import json
 
 import pyhmf as pynn
@@ -12,10 +11,9 @@ from pysthal.command_line_util import init_logger
 init_logger("WARN", [])
 
 
-class RandomNetwork(object):
-    def __init__(self, N, prob, marocco, model=pynn.EIF_cond_exp_isfa_ista):
+class fullyVisibleBmNetwork(object):
+    def __init__(self, N, marocco, model=pynn.EIF_cond_exp_isfa_ista):
         self.N = N
-        self.prob = prob
         self.model = model
         self.marocco = marocco
 
@@ -23,17 +21,24 @@ class RandomNetwork(object):
 
     def build(self):
 
+        # Set the neurons
         self.neurons = pynn.Population(self.N, self.model)
 
-        connector = pynn.FixedProbabilityConnector(p_connect=self.prob,
-                                                   allow_self_connections=True,
-                                                   weights=0.003)
-
+        # in the fully visible BM there each neuron projects to each neuron
+        # both inhibitory and excitatory to enable switching the sing of the
+        # connection during eventual training
+        # self connections are excluded
+        # This model only sets the skeleton of the BM without the noise sources
+        connector = pynn.AllToAllConnector(weights=0.003,
+                                           allow_self_connections=False)
         pynn.Projection(self.neurons,
                         self.neurons,
                         connector,
-                        target='excitatory',
-                        rng=pynn.NativeRNG(42))
+                        target='excitatory')
+        pynn.Projection(self.neurons,
+                        self.neurons,
+                        connector,
+                        target='inhibitory')
 
     def run(self):
         pynn.run(1)
@@ -42,13 +47,12 @@ class RandomNetwork(object):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--prob', default=0.1, type=float)
     parser.add_argument('--N', default=5000, type=int)
-    parser.add_argument('--name', default="random_network", type=str)
+    parser.add_argument('--name', default="fullyVisibleBm_network", type=str)
 
     args = parser.parse_args()
 
-    taskname = "N{}_p{}".format(args.N, args.prob)
+    taskname = "N{}".format(args.N)
 
     marocco = pymarocco.PyMarocco()
     marocco.continue_despite_synapse_loss = True
@@ -58,7 +62,7 @@ def main():
     marocco.persist = "results_{}_{}.xml.gz".format(args.name, taskname)
 
     start = datetime.now()
-    r = RandomNetwork(args.N, args.prob, marocco)
+    r = fullyVisibleBmNetwork(args.N, marocco)
     r.build()
     mid = datetime.now()
     try:

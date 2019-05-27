@@ -2,7 +2,6 @@
 
 import argparse
 from datetime import datetime
-
 import json
 
 import pyhmf as pynn
@@ -12,10 +11,17 @@ from pysthal.command_line_util import init_logger
 init_logger("WARN", [])
 
 
-class RandomNetwork(object):
-    def __init__(self, N, prob, marocco, model=pynn.EIF_cond_exp_isfa_ista):
+class pfeilsNoiseNetwork(object):
+    def __init__(self, N, K, marocco, model=pynn.EIF_cond_exp_isfa_ista):
+        """
+            Class to create a noise Network following Pfeil et. al. 2016.
+
+            Keywords:
+                --- N: number of neuons
+                --- K: number of presynaptic partners per neuron
+        """
         self.N = N
-        self.prob = prob
+        self.K = K
         self.model = model
         self.marocco = marocco
 
@@ -25,9 +31,9 @@ class RandomNetwork(object):
 
         self.neurons = pynn.Population(self.N, self.model)
 
-        connector = pynn.FixedProbabilityConnector(p_connect=self.prob,
-                                                   allow_self_connections=True,
-                                                   weights=0.003)
+        connector = pynn.FixedNumberPreConnector(self.K,
+                                                 weights=1,
+                                                 allow_self_connections=False)
 
         pynn.Projection(self.neurons,
                         self.neurons,
@@ -42,13 +48,13 @@ class RandomNetwork(object):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--prob', default=0.1, type=float)
-    parser.add_argument('--N', default=5000, type=int)
+    parser.add_argument('--K', default=20, type=int)
+    parser.add_argument('--N', default=500, type=int)
     parser.add_argument('--name', default="random_network", type=str)
 
     args = parser.parse_args()
 
-    taskname = "N{}_p{}".format(args.N, args.prob)
+    taskname = "N{}_K{}".format(args.N, args.K)
 
     marocco = pymarocco.PyMarocco()
     marocco.continue_despite_synapse_loss = True
@@ -58,7 +64,7 @@ def main():
     marocco.persist = "results_{}_{}.xml.gz".format(args.name, taskname)
 
     start = datetime.now()
-    r = RandomNetwork(args.N, args.prob, marocco)
+    r = pfeilsNoiseNetwork(args.N, args.K, marocco)
     r.build()
     mid = datetime.now()
     try:
